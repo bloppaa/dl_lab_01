@@ -31,6 +31,7 @@ from config import (  # noqa: E402
     DEFAULT_TARGET,
     DEFAULT_WEIGHT_DECAY,
     TARGET_COLUMNS,
+    HYPERPARAMETER_GRID,
 )
 from data_loader import CognitiveDataset, load_dataframe  # noqa: E402
 from evaluation import (  # noqa: E402
@@ -289,57 +290,83 @@ def train_one_experiment(
 
         inner_mae_scores = []
         inner_qwk_scores = []
-        # TODO(alumno): recorrer HYPERPARAMETER_GRID aqui.
-        # Para cada configuracion, promediar MAE y QWK sobre estos folds
-        # internos. Quedarse con la de menor MAE; empate: mayor QWK.
-        # No usar el fold externo de prueba para elegir hiperparametros.
-        # No reportar el mejor fold interno como resultado final.
+        selected_config = {
+            "hidden_dim": hidden_dim,
+            "dropout": dropout,
+            "learning_rate": learning_rate,
+            "weight_decay": weight_decay,
+        }
+
         if can_make_stratified_splits(y_outer_train, inner_folds):
             inner_splits = split_for_validation(
                 y_outer_train,
                 n_splits=inner_folds,
                 random_state=seed + outer_fold_index,
             )
-            for inner_fold_index, (inner_train_idx, inner_val_idx) in enumerate(
-                inner_splits, start=1
-            ):
-                inner_result = run_training_cycle(
-                    X_train=X_outer_train[inner_train_idx],
-                    y_train=y_outer_train[inner_train_idx],
-                    X_eval=X_outer_train[inner_val_idx],
-                    y_eval=y_outer_train[inner_val_idx],
-                    num_classes=num_classes,
-                    hidden_dim=hidden_dim,
-                    dropout=dropout,
-                    learning_rate=learning_rate,
-                    weight_decay=weight_decay,
-                    batch_size=batch_size,
-                    epochs=epochs,
-                    seed=seed + outer_fold_index * 100 + inner_fold_index,
-                    device=device,
+
+            grid_results = []
+            for config in HYPERPARAMETER_GRID:
+                config_mae_scores = []
+                config_qwk_scores = []
+                for inner_fold_index, (inner_train_idx, inner_val_idx) in enumerate(
+                    inner_splits, start=1
+                ):
+                    inner_result = run_training_cycle(
+                        X_train=X_outer_train[inner_train_idx],
+                        y_train=y_outer_train[inner_train_idx],
+                        X_eval=X_outer_train[inner_val_idx],
+                        y_eval=y_outer_train[inner_val_idx],
+                        num_classes=num_classes,
+                        hidden_dim=config["hidden_dim"],
+                        dropout=config["dropout"],
+                        learning_rate=config["learning_rate"],
+                        weight_decay=config["weight_decay"],
+                        batch_size=batch_size,
+                        epochs=epochs,
+                        seed=seed + outer_fold_index * 100 + inner_fold_index,
+                        device=device,
+                    )
+                    config_mae_scores.append(inner_result["metrics"]["mae_ordinal"])
+                    config_qwk_scores.append(inner_result["metrics"]["qwk"])
+
+                grid_results.append(
+                    {
+                        "config": config,
+                        "mae_scores": config_mae_scores,
+                        "qwk_scores": config_qwk_scores,
+                        "mae_mean": float(np.mean(config_mae_scores)),
+                        "qwk_mean": float(np.mean(config_qwk_scores)),
+                    }
                 )
-                inner_mae_scores.append(inner_result["metrics"]["mae_ordinal"])
-                inner_qwk_scores.append(inner_result["metrics"]["qwk"])
+
+            best_entry = select_best_hyperparameters(grid_results)
+            selected_config = best_entry["config"]
+            inner_mae_scores = best_entry[
+                "mae_scores"
+            ]  # se guardan los folds de la config GANADORA
+            inner_qwk_scores = best_entry[
+                "qwk_scores"
+            ]  # (para que inner_mae/std sigan significando lo mismo)
         else:
             print(
                 f"Aviso: el fold externo {outer_fold_index} de {target_name} "
                 f"no admite {inner_folds} folds internos estratificados "
-                "(clase rara). Se omite la validacion interna en este fold."
+                "(clase rara). Se omite la busqueda de hiperparametros en este fold "
+                "y se usa la configuracion fija recibida por CLI."
             )
 
-        # Esta plantilla reentrena la configuracion fija con todo el
-        # entrenamiento externo. Cuando el grid este activo, reentrenar
-        # aqui la configuracion elegida por MAE interno.
+        # Reentrenar la configuracion GANADORA (o la fija, si no hubo busqueda) con
+        # todo el entrenamiento externo, y evaluar una sola vez en el test externo
         final_result = run_training_cycle(
             X_train=X_outer_train,
             y_train=y_outer_train,
             X_eval=X_outer_test,
             y_eval=y_outer_test,
             num_classes=num_classes,
-            hidden_dim=hidden_dim,
-            dropout=dropout,
-            learning_rate=learning_rate,
-            weight_decay=weight_decay,
+            hidden_dim=selected_config["hidden_dim"],
+            dropout=selected_config["dropout"],
+            learning_rate=selected_config["learning_rate"],
+            weight_decay=selected_config["weight_decay"],
             batch_size=batch_size,
             epochs=epochs,
             seed=seed + outer_fold_index * 1000,
@@ -373,6 +400,7 @@ def train_one_experiment(
                 "y_true": final_result["y_true"],
                 "y_pred": final_result["y_pred"],
                 "final_train_loss": final_result["final_train_loss"],
+                "selected_config": selected_config,
             }
         )
 
@@ -418,6 +446,17 @@ def train_one_experiment(
         ),
         "algorithm": DEFAULT_ALGORITHM,
     }
+
+
+def select_best_hyperparameters(grid_results: list[dict]) -> dict:
+    """
+    Elige la entrada del grid con menor MAE interno medio;
+    en caso de empate, la de mayor QWK interno medio.
+
+    grid_results: lista de dicts con al menos
+        {"config": {...}, "mae_mean": float, "qwk_mean": float}
+    """
+    return min(grid_results, key=lambda entry: (entry["mae_mean"], -entry["qwk_mean"]))
 
 
 def can_make_stratified_splits(y: np.ndarray, n_splits: int) -> bool:
@@ -679,11 +718,6 @@ def main() -> None:
     print(f"\nReportes escritos en {args.output_dir}/")
     for name, path in paths.items():
         print(f"  {name}: {path}")
-    print(
-        "TODO: activar HYPERPARAMETER_GRID en el loop interno, "
-        "implementar CORAL y pesos por clase. Las tablas ya aceptan "
-        "una columna algorithm para comparar metodos."
-    )
 
 
 if __name__ == "__main__":

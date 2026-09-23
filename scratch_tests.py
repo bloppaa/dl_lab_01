@@ -90,6 +90,29 @@ def test_logits_to_ordinal_predictions():
     print("logits_to_ordinal_predictions OK")
 
 
+def test_select_best_hyperparameters():
+    from main import select_best_hyperparameters
+
+    grid_results = [
+        {"config": {"hidden_dim": 32}, "mae_mean": 0.40, "qwk_mean": 0.50},
+        {
+            "config": {"hidden_dim": 64},
+            "mae_mean": 0.35,
+            "qwk_mean": 0.45,
+        },  # menor MAE -> deberia ganar
+        {
+            "config": {"hidden_dim": 16},
+            "mae_mean": 0.35,
+            "qwk_mean": 0.60,
+        },
+    ]
+    best = select_best_hyperparameters(grid_results)
+    assert (
+        best["config"]["hidden_dim"] == 16
+    ), f"gano {best['config']} en vez de hidden_dim=16"
+    print("select_best_hyperparameters OK ->", best["config"])
+
+
 if __name__ == "__main__":
     test_labels_to_levels()
     test_coral_loss()
@@ -97,3 +120,4 @@ if __name__ == "__main__":
     test_coral_layer_shape_and_order()
     test_mlp_coral_forward()
     test_logits_to_ordinal_predictions()
+    test_select_best_hyperparameters()
