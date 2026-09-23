@@ -6,7 +6,6 @@ import torch
 
 def labels_to_levels(labels: torch.Tensor, num_classes: int) -> torch.Tensor:
     """
-    TODO(alumno):
     Convierte clases enteras a umbrales binarios acumulativos.
 
     Ejemplo:
@@ -17,7 +16,11 @@ def labels_to_levels(labels: torch.Tensor, num_classes: int) -> torch.Tensor:
     - salida: (batch_size, num_classes - 1)
     """
 
-    raise NotImplementedError("TODO: implementar labels_to_levels().")
+    thresholds = torch.arange(num_classes - 1, device=labels.device)  # [0, 1, ..., K-2]
+    levels = (
+        labels.unsqueeze(1) > thresholds.unsqueeze(0)
+    ).float()  # broadcasting -> (B, K-1)
+    return levels
 
 
 def coral_loss(

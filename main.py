@@ -276,9 +276,7 @@ def train_one_experiment(
     num_classes = len(artifacts["classes"])
     device = resolve_device(device_name)
 
-    outer_splits = split_for_validation(
-        y, n_splits=outer_folds, random_state=seed
-    )
+    outer_splits = split_for_validation(y, n_splits=outer_folds, random_state=seed)
     outer_results = []
 
     for outer_fold_index, (outer_train_idx, outer_test_idx) in enumerate(
@@ -352,16 +350,24 @@ def train_one_experiment(
             {
                 "outer_fold": outer_fold_index,
                 "inner_mae_mean": (
-                    float(np.mean(inner_mae_scores)) if inner_mae_scores else float("nan")
+                    float(np.mean(inner_mae_scores))
+                    if inner_mae_scores
+                    else float("nan")
                 ),
                 "inner_mae_std": (
-                    float(np.std(inner_mae_scores)) if inner_mae_scores else float("nan")
+                    float(np.std(inner_mae_scores))
+                    if inner_mae_scores
+                    else float("nan")
                 ),
                 "inner_qwk_mean": (
-                    float(np.mean(inner_qwk_scores)) if inner_qwk_scores else float("nan")
+                    float(np.mean(inner_qwk_scores))
+                    if inner_qwk_scores
+                    else float("nan")
                 ),
                 "inner_qwk_std": (
-                    float(np.std(inner_qwk_scores)) if inner_qwk_scores else float("nan")
+                    float(np.std(inner_qwk_scores))
+                    if inner_qwk_scores
+                    else float("nan")
                 ),
                 "outer_metrics": final_result["metrics"],
                 "y_true": final_result["y_true"],
@@ -373,7 +379,10 @@ def train_one_experiment(
     summary = {}
     for metric_name in METRIC_KEYS:
         values = np.asarray(
-            [fold_result["outer_metrics"][metric_name] for fold_result in outer_results],
+            [
+                fold_result["outer_metrics"][metric_name]
+                for fold_result in outer_results
+            ],
             dtype=np.float64,
         )
         summary[f"mean_{metric_name}"] = float(values.mean())
@@ -647,7 +656,11 @@ def main() -> None:
     rank_mode = resolve_rank_mode(args.rank_metric, args.rank_mode)
     print()
     print(format_ranking_console(rank_rows(rows, "f1_macro", "max"), "f1_macro", "max"))
-    print(format_ranking_console(rank_rows(rows, "mae_ordinal", "min"), "mae_ordinal", "min"))
+    print(
+        format_ranking_console(
+            rank_rows(rows, "mae_ordinal", "min"), "mae_ordinal", "min"
+        )
+    )
     print(
         format_ranking_console(
             rank_rows(rows, args.rank_metric, rank_mode),
