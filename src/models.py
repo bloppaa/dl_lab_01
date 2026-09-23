@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ShallowMultiClassNet(nn.Module):
@@ -41,7 +42,6 @@ class ShallowMultiClassNet(nn.Module):
 
 class CoralLayer(nn.Module):
     """
-    TODO(alumno):
     Capa de salida CORAL.
 
     Debe producir K-1 logits acumulativos a partir de un vector de
@@ -62,14 +62,36 @@ class CoralLayer(nn.Module):
         super().__init__()
         self.input_size = input_size
         self.num_classes = num_classes
+        num_thresholds = num_classes - 1
+
+        self.shared_weight = nn.Linear(input_size, 1, bias=False)  # w^T h -> s
+        self.bias_base = nn.Parameter(torch.zeros(1))  # b_0, libre
+        self.bias_deltas = nn.Parameter(
+            torch.zeros(max(num_thresholds - 1, 0))  # T-1 diferencias
+        )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("TODO: implementar CoralLayer.forward().")
+        s = self.shared_weight(inputs)  # (B, 1)
+
+        if self.bias_deltas.numel() > 0:
+            decreasing = torch.cumsum(
+                F.softplus(self.bias_deltas), dim=0
+            )  # (T-1,), siempre creciente y positivo
+            zero = torch.zeros(1, device=self.bias_base.device)
+            offsets = torch.cat([zero, decreasing])  # (T,) = [0, d1, d1+d2, ...]
+        else:
+            offsets = torch.zeros(1, device=self.bias_base.device)
+
+        biases = (
+            self.bias_base - offsets
+        )  # (T,) -> b_0, b_0-d1, b_0-d1-d2, ... (decreciente)
+
+        logits = s + biases  # broadcasting (B,1) + (T,) -> (B, T)
+        return logits
 
 
 class MLPCoral(nn.Module):
     """
-    TODO(alumno):
     MLP ordinal poco profunda con cabeza CORAL.
 
     Arquitectura sugerida:
@@ -81,15 +103,27 @@ class MLPCoral(nn.Module):
     """
 
     def __init__(
-        self,
-        num_features: int,
-        num_classes: int,
-        dropout: float = 0.15,
+        self, num_features: int, num_classes: int, dropout: float = 0.15
     ) -> None:
         super().__init__()
         self.num_features = num_features
         self.num_classes = num_classes
         self.dropout = dropout
 
+        self.fc1 = nn.Linear(num_features, 32)
+        self.relu1 = nn.ReLU()
+        self.bn1 = nn.BatchNorm1d(32)
+        self.drop = nn.Dropout(dropout)
+        self.fc2 = nn.Linear(32, 16)
+        self.relu2 = nn.ReLU()
+        self.coral = CoralLayer(input_size=16, num_classes=num_classes)
+
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("TODO: implementar MLPCoral.forward().")
+        hidden = self.fc1(inputs)
+        hidden = self.relu1(hidden)
+        hidden = self.bn1(hidden)
+        hidden = self.drop(hidden)
+        hidden = self.fc2(hidden)
+        hidden = self.relu2(hidden)
+        logits = self.coral(hidden)
+        return logits
