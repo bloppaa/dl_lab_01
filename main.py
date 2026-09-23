@@ -52,6 +52,8 @@ from reporting import (  # noqa: E402
 from losses import coral_loss, effective_number_weights  # noqa: E402
 from ordinal import logits_to_ordinal_predictions  # noqa: E402
 
+ALGORITHM_LABELS = {"softmax": DEFAULT_ALGORITHM, "coral": "CORAL"}
+
 
 def build_project_objects(
     data_path: str | Path,
@@ -491,7 +493,7 @@ def train_one_experiment(
         "last_fold_confusion": compute_confusion_matrix(
             last_fold["y_true"], last_fold["y_pred"]
         ),
-        "algorithm": DEFAULT_ALGORITHM,
+        "algorithm": ALGORITHM_LABELS.get(algorithm, algorithm),
     }
 
 
@@ -690,6 +692,22 @@ def build_argument_parser() -> argparse.ArgumentParser:
         choices=["auto", "max", "min"],
         help="auto minimiza MAE y errores graves; maximiza el resto.",
     )
+    parser.add_argument(
+        "--coral",
+        action="store_true",
+        help="Usa la cabeza CORAL (MLPCoral + coral_loss) en vez de Softmax.",
+    )
+    parser.add_argument(
+        "--use-weights",
+        action="store_true",
+        help="Pondera coral_loss por numero efectivo de muestras (solo con --coral).",
+    )
+    parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.99,
+        help="Beta de effective_number_weights (solo con --coral --use-weights).",
+    )
     return parser
 
 
@@ -698,6 +716,12 @@ def main() -> None:
 
     parser = build_argument_parser()
     args = parser.parse_args()
+
+    algorithm_key = "coral" if args.coral else "softmax"
+    algorithm_label = ALGORITHM_LABELS[algorithm_key]
+
+    if args.use_weights and not args.coral:
+        print("Aviso: --use-weights se ignora porque no se paso --coral.")
 
     if args.all_targets:
         target_names = list(TARGET_COLUMNS)
@@ -720,7 +744,7 @@ def main() -> None:
             args.gds_inner_folds,
             args.all_targets,
         )
-        print(f"\n=== {DEFAULT_ALGORITHM} / {target_name} ===")
+        print(f"\n=== {algorithm_label} / {target_name} ===")
         results = train_one_experiment(
             data_path=args.data_path,
             target_name=target_name,
@@ -734,9 +758,12 @@ def main() -> None:
             inner_folds=inner_folds,
             seed=args.seed,
             device_name=args.device,
+            algorithm=algorithm_key,
+            beta=args.beta,
+            use_weights=args.use_weights,
         )
         print_experiment_results(results)
-        rows.append(experiment_to_row(results, algorithm=DEFAULT_ALGORITHM))
+        rows.append(experiment_to_row(results, algorithm=algorithm_label))
         confusion_by_target[target_name] = results["last_fold_confusion"]
 
     rank_mode = resolve_rank_mode(args.rank_metric, args.rank_mode)
