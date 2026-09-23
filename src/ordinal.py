@@ -9,7 +9,6 @@ def logits_to_ordinal_predictions(
     threshold: float = 0.5,
 ) -> torch.Tensor:
     """
-    TODO(alumno):
     Convierte logits CORAL en una clase entera.
 
     Pista:
@@ -21,4 +20,8 @@ def logits_to_ordinal_predictions(
     - salida: (batch_size,)
     """
 
-    raise NotImplementedError("TODO: implementar logits_to_ordinal_predictions().")
+    probs = torch.sigmoid(logits)  # (B, K-1)
+    predictions = (probs > threshold).sum(
+        dim=1
+    )  # (B,) -- cuenta cuantos umbrales se superan
+    return predictions.long()

@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from src.losses import labels_to_levels, coral_loss, effective_number_weights
 from src.models import CoralLayer, MLPCoral
+from src.ordinal import logits_to_ordinal_predictions
 
 
 def test_labels_to_levels():
@@ -74,9 +75,25 @@ def test_mlp_coral_forward():
     print("MLPCoral OK -> shape", logits.shape)
 
 
+def test_logits_to_ordinal_predictions():
+    logits = torch.tensor([[1.30, 0.99, 0.29, -0.68]])
+    preds = logits_to_ordinal_predictions(logits)
+    assert preds.item() == 3, f"got {preds.item()}"
+
+    # casos extremos
+    all_negative = torch.full((1, 4), -5.0)
+    assert logits_to_ordinal_predictions(all_negative).item() == 0
+
+    all_positive = torch.full((1, 4), 5.0)
+    assert logits_to_ordinal_predictions(all_positive).item() == 4
+
+    print("logits_to_ordinal_predictions OK")
+
+
 if __name__ == "__main__":
     test_labels_to_levels()
     test_coral_loss()
     test_effective_number_weights()
     test_coral_layer_shape_and_order()
     test_mlp_coral_forward()
+    test_logits_to_ordinal_predictions()
