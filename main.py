@@ -40,7 +40,7 @@ from evaluation import (  # noqa: E402
     compute_confusion_matrix,
     format_classification_report,
 )
-from models import ShallowMultiClassNet  # noqa: E402
+from models import ShallowMultiClassNet, MLPCoral  # noqa: E402
 from preprocessing import prepare_experiment_data, split_for_validation  # noqa: E402
 from reporting import (  # noqa: E402
     experiment_to_row,
@@ -49,6 +49,8 @@ from reporting import (  # noqa: E402
     resolve_rank_mode,
     save_experiment_reports,
 )
+from losses import coral_loss, effective_number_weights  # noqa: E402
+from ordinal import logits_to_ordinal_predictions  # noqa: E402
 
 
 def build_project_objects(
@@ -156,6 +158,7 @@ def evaluate_model(
     model: nn.Module,
     loader: DataLoader,
     device: torch.device,
+    predict_fn=None,
 ) -> tuple[dict[str, float], np.ndarray, np.ndarray]:
     """Evalua el modelo y devuelve metricas, etiquetas y predicciones."""
 
@@ -167,7 +170,10 @@ def evaluate_model(
         for inputs, targets in loader:
             inputs = inputs.to(device)
             logits = model(inputs)
-            predictions = logits.argmax(dim=1).cpu().numpy()
+            if predict_fn is not None:
+                predictions = predict_fn(logits)
+            else:
+                predictions = logits.argmax(dim=1).cpu().numpy()
 
             all_predictions.append(predictions)
             all_targets.append(targets.numpy())
@@ -191,6 +197,9 @@ def run_training_cycle(
     epochs: int,
     seed: int,
     device: torch.device,
+    algorithm: str = "softmax",
+    beta: float = 0.99,
+    use_weights: bool = False,
 ) -> dict:
     """Entrena y evalua una configuracion puntual del modelo."""
 
@@ -203,14 +212,40 @@ def run_training_cycle(
         X_eval, y_eval, batch_size=batch_size, shuffle=False, seed=seed
     )
 
-    model = ShallowMultiClassNet(
-        input_dim=X_train.shape[1],
-        hidden_dim=hidden_dim,
-        dropout=dropout,
-        output_dim=num_classes,
-    ).to(device)
+    if algorithm == "coral":
+        model = MLPCoral(
+            num_features=X_train.shape[1],
+            num_classes=num_classes,
+            dropout=dropout,
+        ).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+        class_weights = None
+        if use_weights:
+            class_weights = effective_number_weights(
+                y_train, num_classes, beta=beta
+            ).to(device)
+
+        def criterion(logits, targets):
+            return coral_loss(logits, targets, num_classes, class_weights=class_weights)
+
+        def predict_fn(logits):
+            return logits_to_ordinal_predictions(logits).cpu().numpy()
+
+    elif algorithm == "softmax":
+        model = ShallowMultiClassNet(
+            input_dim=X_train.shape[1],
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            output_dim=num_classes,
+        ).to(device)
+        criterion = nn.CrossEntropyLoss()
+        predict_fn = None
+
+    else:
+        raise ValueError(
+            f"algorithm desconocido: {algorithm!r} (usar 'softmax' o 'coral')"
+        )
+
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=learning_rate,
@@ -222,7 +257,9 @@ def run_training_cycle(
         epoch_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
         history.append(epoch_loss)
 
-    metrics, y_true, y_pred = evaluate_model(model, eval_loader, device=device)
+    metrics, y_true, y_pred = evaluate_model(
+        model, eval_loader, device=device, predict_fn=predict_fn
+    )
 
     return {
         "model": model,
@@ -231,6 +268,7 @@ def run_training_cycle(
         "y_true": y_true,
         "y_pred": y_pred,
         "final_train_loss": history[-1],
+        "algorithm": algorithm,
     }
 
 
@@ -247,6 +285,9 @@ def train_one_experiment(
     inner_folds: int = DEFAULT_INNER_FOLDS,
     seed: int = DEFAULT_RANDOM_SEED,
     device_name: str = "cpu",
+    algorithm: str = "softmax",
+    beta: float = 0.99,
+    use_weights: bool = False,
 ) -> dict:
     """
     Ejecuta el flujo de validacion anidada del laboratorio.
@@ -325,6 +366,9 @@ def train_one_experiment(
                         epochs=epochs,
                         seed=seed + outer_fold_index * 100 + inner_fold_index,
                         device=device,
+                        algorithm=algorithm,
+                        beta=beta,
+                        use_weights=use_weights,
                     )
                     config_mae_scores.append(inner_result["metrics"]["mae_ordinal"])
                     config_qwk_scores.append(inner_result["metrics"]["qwk"])
@@ -371,6 +415,9 @@ def train_one_experiment(
             epochs=epochs,
             seed=seed + outer_fold_index * 1000,
             device=device,
+            algorithm=algorithm,
+            beta=beta,
+            use_weights=use_weights,
         )
 
         outer_results.append(
