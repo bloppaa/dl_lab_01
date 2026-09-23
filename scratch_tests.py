@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from src.losses import labels_to_levels, coral_loss, effective_number_weights
 
 
@@ -32,6 +33,18 @@ def test_coral_loss():
     print("coral_loss (con pesos) OK ->", loss_weighted.item())
 
 
+def test_effective_number_weights():
+    labels = np.array([0] * 649 + [1] * 298 + [2] * 172)
+    weights = effective_number_weights(labels, num_classes=3, beta=0.99)
+    assert torch.isclose(
+        weights.mean(), torch.tensor(1.0), atol=1e-5
+    ), f"media = {weights.mean()}"
+    # clase minoritaria debe pesar mas que la mayoritaria
+    assert weights[2] > weights[0], f"got {weights}"
+    print("effective_number_weights OK ->", weights)
+
+
 if __name__ == "__main__":
     test_labels_to_levels()
     test_coral_loss()
+    test_effective_number_weights()

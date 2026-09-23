@@ -64,7 +64,6 @@ def effective_number_weights(
     beta: float = 0.99,
 ) -> torch.Tensor:
     """
-    TODO(alumno):
     Pesos por numero efectivo de muestras:
 
         w_c = (1 - beta) / (1 - beta ** n_c)
@@ -75,5 +74,17 @@ def effective_number_weights(
     - labels: (N,)
     - salida: (num_classes,)
     """
+    counts = np.array(
+        [np.sum(labels == c) for c in range(num_classes)],
+        dtype=np.float64,
+    )
+    counts = np.clip(
+        counts, a_min=1, a_max=None
+    )  # evitar división por 0 si alguna clase no aparece
 
-    raise NotImplementedError("TODO: implementar effective_number_weights().")
+    effective_num = 1.0 - np.power(beta, counts)
+    weights = (1.0 - beta) / effective_num  # w_c
+
+    weights = weights / weights.mean()  # normalizar a media 1
+
+    return torch.tensor(weights, dtype=torch.float32)
