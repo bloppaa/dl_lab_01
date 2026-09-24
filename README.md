@@ -8,8 +8,8 @@ El proyecto fue desarrollado usando Conda y Python 3.10.
 
 ```bash
 # Clonar el repositorio
-git clone
-cd
+git clone https://github.com/bloppaa/dl_lab_01.git
+cd dl_lab_01
 
 # Crear y activar el entorno de Conda
 conda env create -f environment.yml
@@ -47,7 +47,7 @@ bash scripts/run_all_experiments.sh --quick
 python scripts/merge_results.py --results-root results_quick
 ```
 
-Los resultados consolidados se guardan en `results_quick/\_combined/resultados_combinados.md` y `.csv`.
+Los resultados consolidados se guardan en `results_quick/_combined/resultados_combinados.md` y `.csv`.
 
 ### Opción B: Ejecución Completa del Informe (20 épocas)
 
