@@ -290,6 +290,7 @@ def train_one_experiment(
     algorithm: str = "softmax",
     beta: float = 0.99,
     use_weights: bool = False,
+    use_grid: bool = True,
 ) -> dict:
     """
     Ejecuta el flujo de validacion anidada del laboratorio.
@@ -340,7 +341,7 @@ def train_one_experiment(
             "weight_decay": weight_decay,
         }
 
-        if can_make_stratified_splits(y_outer_train, inner_folds):
+        if use_grid and can_make_stratified_splits(y_outer_train, inner_folds):
             inner_splits = split_for_validation(
                 y_outer_train,
                 n_splits=inner_folds,
@@ -394,12 +395,13 @@ def train_one_experiment(
                 "qwk_scores"
             ]  # (para que inner_mae/std sigan significando lo mismo)
         else:
-            print(
-                f"Aviso: el fold externo {outer_fold_index} de {target_name} "
-                f"no admite {inner_folds} folds internos estratificados "
-                "(clase rara). Se omite la busqueda de hiperparametros en este fold "
-                "y se usa la configuracion fija recibida por CLI."
-            )
+            if use_grid:
+                print(
+                    f"Aviso: el fold externo {outer_fold_index} de {target_name} "
+                    f"no admite {inner_folds} folds internos estratificados "
+                    "(clase rara). Se omite la busqueda de hiperparametros en este fold "
+                    "y se usa la configuracion fija recibida por CLI."
+                )
 
         # Reentrenar la configuracion GANADORA (o la fija, si no hubo busqueda) con
         # todo el entrenamiento externo, y evaluar una sola vez en el test externo
@@ -554,10 +556,15 @@ def print_experiment_results(results: dict) -> None:
 
     for fold_result in results["outer_folds"]:
         outer = fold_result["outer_metrics"]
+        inner_mae_mean = fold_result["inner_mae_mean"]
+        inner_mae_std = fold_result["inner_mae_std"]
+        if np.isnan(inner_mae_mean):
+            inner_mae_text = "N/A (grid omitido)"
+        else:
+            inner_mae_text = f"{inner_mae_mean:.4f} +/- {inner_mae_std:.4f}"
         print(
             f"Fold externo {fold_result['outer_fold']}: "
-            f"MAE interno = {fold_result['inner_mae_mean']:.4f} "
-            f"+/- {fold_result['inner_mae_std']:.4f}, "
+            f"MAE interno = {inner_mae_text}, "
             f"acc = {outer['accuracy']:.4f}, "
             f"F1_macro = {outer['f1_macro']:.4f}, "
             f"MAE = {outer['mae_ordinal']:.4f}, "
@@ -717,6 +724,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=0.99,
         help="Beta de effective_number_weights (solo con --coral --use-weights).",
     )
+    parser.add_argument(
+        "--no-grid",
+        action="store_true",
+        help="Omite HYPERPARAMETER_GRID; usa la config fija del CLI (hidden-dim/dropout/lr/wd/beta).",
+    )
     return parser
 
 
@@ -728,6 +740,7 @@ def main() -> None:
 
     algorithm_key = "coral" if args.coral else "softmax"
     algorithm_label = ALGORITHM_LABELS[algorithm_key]
+    use_grid = not args.no_grid
 
     if args.use_weights and not args.coral:
         print("Aviso: --use-weights se ignora porque no se paso --coral.")
@@ -770,6 +783,7 @@ def main() -> None:
             algorithm=algorithm_key,
             beta=args.beta,
             use_weights=args.use_weights,
+            use_grid=use_grid,
         )
         print_experiment_results(results)
         rows.append(experiment_to_row(results, algorithm=algorithm_label))
