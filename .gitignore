@@ -14,11 +14,10 @@ dataset/*
 results/*
 !results/README.md
 
+results_quick/
+
 # Material exclusivo del profesor (solucion de referencia).
 docente/
 
 # Presentación del proyecto
 presentation/
-
-# Temp folder until refactor
-results_*
