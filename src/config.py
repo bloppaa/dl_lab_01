@@ -47,33 +47,33 @@ DEFAULT_RANK_MODE = "auto"
 DEFAULT_ALGORITHM = "Softmax"
 MINIMIZE_METRICS = ("mae_ordinal", "errores_graves")
 
-# TODO(alumno): recorrer este grid en el loop interno de validacion.
-# Seleccionar la configuracion con menor MAE interno (empate: mayor QWK).
-# No usar el fold externo para elegir hiperparametros.
-# Para CORAL, incluir tambien "beta" en cada diccionario.
 HYPERPARAMETER_GRID = [
     {
         "hidden_dim": 32,
         "dropout": 0.15,
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
+        "beta": 0.99,
     },
     {
         "hidden_dim": 64,
         "dropout": 0.15,
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
+        "beta": 0.9,
     },
     {
         "hidden_dim": 32,
         "dropout": 0.30,
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
+        "beta": 0.999,
     },
     {
         "hidden_dim": 32,
         "dropout": 0.15,
         "learning_rate": 5e-4,
         "weight_decay": 1e-4,
+        "beta": 0.99,
     },
 ]

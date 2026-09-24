@@ -369,7 +369,7 @@ def train_one_experiment(
                         seed=seed + outer_fold_index * 100 + inner_fold_index,
                         device=device,
                         algorithm=algorithm,
-                        beta=beta,
+                        beta=config.get("beta", beta),
                         use_weights=use_weights,
                     )
                     config_mae_scores.append(inner_result["metrics"]["mae_ordinal"])
@@ -418,7 +418,7 @@ def train_one_experiment(
             seed=seed + outer_fold_index * 1000,
             device=device,
             algorithm=algorithm,
-            beta=beta,
+            beta=selected_config.get("beta", beta),
             use_weights=use_weights,
         )
 
@@ -564,6 +564,15 @@ def print_experiment_results(results: dict) -> None:
             f"err>=2 = {outer['errores_graves']:.4f}, "
             f"loss final = {fold_result['final_train_loss']:.4f}"
         )
+        selected = fold_result.get("selected_config")
+        if selected is not None:
+            print(
+                f"  config ganadora: hidden_dim={selected['hidden_dim']}, "
+                f"dropout={selected['dropout']}, "
+                f"lr={selected['learning_rate']}, "
+                f"wd={selected['weight_decay']}, "
+                f"beta={selected.get('beta', 'n/a')}"
+            )
 
     print("Reporte del ultimo fold externo:")
     print(results["last_fold_report"])

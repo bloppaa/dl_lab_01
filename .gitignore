@@ -21,5 +21,4 @@ docente/
 presentation/
 
 # Temp folder until refactor
-results_coral
-results_softmax
+results_*
